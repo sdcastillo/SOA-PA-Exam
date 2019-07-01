@@ -1,0 +1,420 @@
+---
+title: "PA Sample Project - Student Performance"
+output:
+  html_document:
+    df_print: paged
+editor_options:
+  chunk_output_type: console
+---
+
+## Note to graders
+
+Some of the graphical output may not match the word document exactly due to how the train and test sets were split based on the random seed.  This is because I initially created the train/test sets, then discovered additionaly outlying cases, removed them, and then re-split train and test.  Because the random seed is based on the row index of the data, droping these few records was equivalent to changing the seed (at least as far as my knowledge goes).  I went back and updating the textual model output, but updating all of the graphs would be too time consuming.
+
+## Disclaimer
+
+This Rmd file was prepared by School Wiz for internal use. It is being provided as is for use by Sharpened Consulting. No warranty is made regarding accuracy or applicability of the code provided.
+
+## Useful code chunks
+
+I find these two items useful and I often place them at the beginning of my Rmd file in case they might prove useful. 
+
+The first is helpful when constructing plots of factor/character variables - remember, boxplots can be used to plot a continuous variable and a factor variable at the same time.  
+
+You will need to replace CONTINUOUS.VARIABLE, FACTOR.VARIABLE, DATASET, XLABEL, and YLABEL.
+
+```{r eval = F}
+
+#Note to grader: I used my own method for making graphs
+boxplot(CONTINUOUS.VARIABLE ~ FACTOR.VARIABLE,
+        data = DATASET,
+        xlab = "XLABEL",
+        ylab = "YLABEL")
+```
+
+The second changes the order of the levels for a factor (categorical variable). 
+
+This can make a difference for GLM results as the first level becomes the baseline and all but the first level become additional predictor variables. In general, for GLMs it is good to set the base (reference) level to the one that has the most observations.
+
+```{r eval = F}
+#Note to grader: I used the function from the forcats library fct_infreq in order to set the base (reference) factor levels to those with the most observations on line 198
+levels(data.frame$CATEGORICAL)
+data.frame$CATEGORICAL <- relevel(data.frame$CATEGORICAL, ref = "Level Name")
+levels(data.frame$CATEGORICAL)
+# The levels function will help you see the effect of the change.
+# Replace "data.frame" with the name of your dataframe (2 times).
+# Replace "CATEGORICAL" with the name of a variable that is a factor (categorical variable) (2 times).
+# Replace "Level Name" with the name of the level that should become the first level.
+```
+
+## Read in data
+
+Read in the dataset and create a pass/fail factor variable.
+
+```{r}
+.libPaths("C:/Users/sam.castillo/Desktop/PA/library/PAlibrary")
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(tidyr)
+library(broom)
+library(forcats)
+library(caret)
+library(gridExtra)
+library(rpart)
+library(rpart.plot)
+```
+
+
+```{r}
+
+Full.DS <- read.csv("C:/Users/sam.castillo/Desktop/PA/Student Success Project/student_grades.csv")
+
+# Note the number of rows.
+nrow(Full.DS) # 585 students
+
+dim(Full.DS)
+glimpse(Full.DS)
+ 
+#Take a quick look at G3.
+table(Full.DS$G3)
+
+# There are clearly some issues here, they can be handled in the data cleaning stage.
+
+# Create a new variable that assigns pass "P" to those with G3 >= 10.
+Full.DS$G3.Pass.Flag <- as.factor(ifelse(Full.DS$G3 >= 10, "P", "F"))
+
+# Remove G1, G2, and absences.
+
+```
+
+## Data exploration and cleaning
+
+To get a sense of the data, here is a summary.
+
+```{r}
+summary(Full.DS)
+str(Full.DS)
+```
+
+This is a good time to decide if records with unusual G3 values should be removed. Otherwise, when plots are made with regard to passing and failing they may reflect records that would be removed later. Didn't get around to this, having only noticed it as I was sending this off.
+
+```{r}
+# Remove records with inapprorpiate G3 values, if any.
+Full.DS %>% select_if(is.numeric) %>% summary()
+Full.DS %>% select_if(~!is.numeric(.x)) %>% mutate_all(as.factor) %>% summary()
+summary(Full.DS$G3)
+Full.DS %>% count(G3) 
+
+df <- Full.DS %>% 
+  filter(age <= 20,#remove outliers by age
+         Medu > 0, 
+         Fedu > 0,#remove outliers with no edu
+         absences < 40,
+         G1 > 0,
+         G2 > 0, 
+         G3 > 0) %>% 
+  mutate(pass_flag = ifelse(G3 >= 10, 1, 0))
+
+df %>% count(pass_flag) %>% mutate(percent = n/sum(n))
+```
+
+It appears there are some outliers. I've used my boxplot function to look at age versus passing. Probably should be done for other numeric variables.
+
+It looks like age does make a diffrence and there are some age outliers.
+
+```{r}
+boxplot(age ~ pass_flag,
+        data = df,
+        xlab = "Pass",
+        ylab = "Age")
+
+df %>% 
+  ggplot(aes(age)) + 
+  geom_histogram()
+
+df %>% select_if(is.numeric) %>% 
+  select(-G1, -G2, -G3, -absences, -age) %>% 
+  gather(feature, value) %>% 
+  group_by(feature, value) %>% 
+  summarise(n = n()) %>% 
+  filter(n > 0) %>% 
+  ungroup() %>% 
+  spread(value, n) %>% 
+  group_by(feature) %>% 
+  mutate_all(function(x){x/nrow(df)}) %>% 
+  mutate_all(~ifelse(is.na(.x), 0, .x)) %>% 
+  knitr::kable("rst", digits = 2)
+
+df %>% 
+  ggplot(aes(G3)) + 
+  geom_histogram()
+```
+
+For categorical variables (which for this purpose could include those on 1-5 type scales) I found a way to make bar charts (I got this from Chapter 4 of the excellent book by Healy).
+
+```{r}
+library(ggplot2)
+
+ggplot(data=df, mapping = aes(x=Medu, fill = pass_flag)) + geom_bar(position = "fill")
+
+# Medu is odd: Would expect more passing with more mother's education. Not clear what 0 means. Can someone really have no education? No time to check with my bosses here.
+
+table(Full.DS$Medu)
+
+# Few in that category. Maybe eliminate?
+```
+
+
+## Variable exploration
+
+```{r}
+# Remove records with questionable variable values.
+# Consider removing variables that appear to have no predictive power.
+
+#See earlier work
+
+```
+
+## Calculate correlations for numerical variables
+
+I was able to come up with a way to do this.
+
+```{r}
+
+# Get the numeric variables for use in the correlation matrix.
+
+numeric.vars <-names(df)[sapply(df, class) %in% c("integer", "numeric")] # get numeric var names
+num.Full.DS <- df[, numeric.vars] # get only numeric variables
+
+# Create the correlation matrix.
+
+cor.Full.DS <- data.frame(round(cor(num.Full.DS), 2)) 
+
+cor.Full.DS %>% View()
+```
+
+## Feature creation
+
+Might be a good idea to decide if new features should be created before models created.
+
+```{r}
+
+df <- df %>% 
+  mutate(parent_edu = ifelse(Medu > Fedu, Medu, Fedu)) %>% 
+  mutate_if(is.factor, fct_infreq)#set reference levels
+
+```
+
+## Prepare dataset for modeling 
+
+I need to remember to do this only after all the cleaning and feature creation is done. That ensures the train and test sets both contain the variables that will be used.
+
+Stratified sampling should be used to handle an unbalanced sample; approximately 65% passing and 35% failing.  Want to make sure we dont get more passing or failing individuals in our test or train sets!
+
+Load caret library, set seed, and split into train and test sets. It is supposed to use stratification by default, but I'm going to check on that.
+
+```{r}
+library(caret)
+set.seed(1234)
+partition <- createDataPartition(df$pass_flag, list = FALSE, p = .75)
+train <- df[partition, ]
+test <- df[-partition, ]
+
+# Pass Rates in train set:
+train %>% count(pass_flag) %>% mutate(percent = n/sum(n))
+
+# Pass rates in test set:
+test %>% count(pass_flag) %>% mutate(percent = n/sum(n))
+
+```
+
+
+## Build models  
+
+### Model 1 - Decision tree
+
+Model to predict pass or fail
+
+The following code runs a decision tree classification model on G3.Pass.Flag, 
+using all variables except for G3.  It uses the full dataset.
+
+The control parameter is used to set the minbucket, cp and maxdepth parameters.
+
+
+```{r}
+library(rpart)
+library(rpart.plot)
+set.seed(123)
+excluded_variables <- c("G3", "G2", "G1") # List excluded variables.
+
+dt <- rpart(pass_flag ~ ., 
+            data = train %>% select(-excluded_variables),
+            control = rpart.control(minbucket = 50, cp = .004, maxdepth = 5),
+            parms = list(split = "gini"))
+
+rpart.plot(dt, box.palette = "Grays", type = 5)
+
+# The default is that any group with a predicted probability of pass over 0.5 is assigned pass...it might be good to allow that to be arbitrary.
+# Note that if the model is built on one dataset and then evaluated against another, the predict function needs to have newdata = data.frame added.
+
+cutoff <- 0.6 # set cutoff value
+
+print("All data confusion matrix")
+predicted <- predict(dt, test, list = F) %>% as.numeric()# This outputs the probabiity of failing
+predicted.final <- ifelse(predicted > cutoff, 0, 1) %>% as.factor()
+confusionMatrix(predicted.final, test$pass_flag %>% as.factor()) 
+```
+
+By looking at the decision tree confusion matrix, it looks very accurate. However, the tree itself looks quite complicated.  Maybe playing around with the control parameters or pruning would work...no time to look into that now, on to random forests...
+
+### Model 2 - Random forest classification
+
+The following code runs a random forest classification model on G3.Pass.Flag, using all variables except G3.  It uses the full dataset.  The code runs through repeated cross validation, and produces the best fit model based on the accuracy metric.
+
+After the model code, there are some diagnostic outputs, such as the variable importance plot and the confusion matrix.
+
+
+```{r}
+
+set.seed(100)
+
+control <- trainControl(method = "repeatedcv", 
+                        number = 3, #setting this down to 1 to make it faster to compile the html document.  Originally this was set to 5
+                        repeats = 2)
+
+tune_grid <- expand.grid(mtry = c(1:20))
+
+rf <- train(as.factor(pass_flag) ~ ., 
+            data = train %>% select(-excluded_variables),
+            method = "rf",
+            ntree = 50,
+            importance = TRUE,
+            trControl = control,
+            tuneGrid = tune_grid)
+plot(rf)
+
+plot(varImp(rf), top = 15, main = "Variable Importance of Classification Random Forest")
+
+cutoff <- 0.2 # set cutoff value
+
+print("All data confusion matrix")
+predicted <- predict(rf,test, type = "prob")[,1] # This outputs the probabiity of failing
+predicted.final <- ifelse(predicted > cutoff, 0, 1) %>% as.factor()
+confusionMatrix(predicted.final, test$pass_flag %>% as.factor()) 
+
+```
+
+### Model 3 - GLM
+
+Because we are modeling a probability (of passing), we need to use the binomial family with a logit link function.  I didn't have time to filter out any insignificant variables, just to run a model on the full dataset using all the variables.
+
+```{r, echo = TRUE}
+GLM <- glm(pass_flag ~ absences + failures + parent_edu + health + famsup + Walc , 
+           data = train, family = binomial(link = "logit"))
+
+summary(GLM)
+
+GLM.pred <- predict(GLM, newdata = test, type = "response")
+
+cutoff <- 0.5 # set cutoff value
+
+print("All data confusion matrix")
+predicted <- predict(GLM, test, type = "response") # This outputs the probabiity of passing
+predicted.final <- ifelse(predicted > cutoff, 0, 1) %>% as.factor()
+confusionMatrix(predicted.final, test$pass_flag %>% as.factor()) 
+```
+
+```{r}
+GLM <- glm(pass_flag ~ absences + failures + parent_edu + health + famsup + Walc , 
+           data = train, family = binomial(link = "probit"))
+
+summary(GLM)
+
+GLM.pred <- predict(GLM, newdata = test, type = "response")
+
+cutoff <- 0.4 # set cutoff value
+
+print("All data confusion matrix")
+predicted <- predict(GLM, test, type = "response") # This outputs the probabiity of passing
+predicted.final <- ifelse(predicted > cutoff, 0, 1) %>% as.factor()
+confusionMatrix(predicted.final, test$pass_flag %>% as.factor()) 
+```
+
+```{r}
+GLM <- glm(pass_flag ~ absences*failures + absences*health +  parent_edu + famsup + Walc , 
+           data = train, family = binomial(link = "probit"))
+
+summary(GLM)
+
+GLM.pred <- predict(GLM, newdata = test, type = "response")
+
+cutoff <- 0.6 # set cutoff value
+
+print("All data confusion matrix")
+
+#this is the confusion matrix over the ENTIRE data set
+predicted <- predict(GLM, df, type = "response") # This outputs the probabiity of passing
+predicted.final <- ifelse(predicted > cutoff, 0, 1) %>% as.factor()
+confusionMatrix(predicted.final, df$pass_flag %>% as.factor()) 
+plot(GLM)
+```
+
+Wow, there is not a lot of statistical significance in this model, but there is pretty good accuracy.  Could it just be luck? 
+
+```{r}
+get_partial_data <- function(var){
+ df <-  pdp::partial(rf, var,type = "classification") %>% 
+    as_tibble() 
+ names(df) <- c("feature_value", "y_hat")
+ df %>% mutate(feature = var, feature_value = as.character(feature_value))
+}
+
+features <- c("absences", "failures", "health", "parent_edu", "Walc")
+
+partial_data <- features %>% 
+  purrr::map_dfr(get_partial_data)
+
+head(partial_data)
+
+partial_data %>% 
+ # filter(feature == "absences") %>%
+  mutate(feature_value = as.numeric(feature_value)) %>% 
+  ggplot(aes(feature_value, y_hat)) + 
+  geom_point() + 
+  geom_line() + 
+  theme_bw() + 
+  facet_wrap(vars(feature), scales  = "free")
+```
+
+## Marginal effects plots for interaction terms from GLM
+
+```{r}
+predicted <- predict(GLM, df, type = "response")
+df %>% 
+  mutate(y_hat = predicted,
+         health = ifelse(health  > 3, 1, 0)) %>% 
+  group_by(absences, health) %>% 
+  summarise(y_hat = mean(y_hat)) %>% 
+  ggplot(aes(absences,y_hat, color = as.factor(health), shape = as.factor(health))) + 
+  geom_point(size = 3) + 
+  theme_bw() + 
+  ggtitle("Predicted Pass Rate vs Health Status and Number of Absences") + 
+  labs(subtitle = "Students with good health (health > 3): 1 \n Students with poor health (health > 3): 0") + 
+  xlab("Number of Absences") + 
+  ylab("Predicted Pass Rate")
+```
+
+```{r}
+df %>% 
+  mutate(y_hat = predicted,
+         failures = ifelse(failures > 1, "Failed at least 1 Past Trimester", "Never Failed")) %>% 
+  group_by(failures, absences) %>% 
+  summarise(y_hat = mean(y_hat)) %>% 
+  ggplot(aes(absences, y_hat, color = failures, shape = failures)) + 
+  geom_point(size = 3) + 
+  theme_bw()  + 
+  xlab("Number of Absences") + 
+  ylab("Predicted Pass Rate")
+```
+

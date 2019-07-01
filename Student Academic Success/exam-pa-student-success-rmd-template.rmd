@@ -1,0 +1,265 @@
+---
+title: "PA Sample Project - Student Performance"
+output: html_notebook
+---
+
+## Disclaimer
+
+This Rmd file was prepared by School Wiz for internal use. It is being provided as is for use by Sharpened Consulting. No warranty is made regarding accuracy or applicability of the code provided.
+
+## Useful code chunks
+
+I find these two items useful and I often place them at the beginning of my Rmd file in case they might prove useful. 
+
+The first is helpful when constructing plots of factor/character variables - remember, boxplots can be used to plot a continuous variable and a factor variable at the same time.  
+
+You will need to replace CONTINUOUS.VARIABLE, FACTOR.VARIABLE, DATASET, XLABEL, and YLABEL.
+
+```{r}
+boxplot(CONTINUOUS.VARIABLE ~ FACTOR.VARIABLE,
+        data = DATASET,
+        xlab = "XLABEL",
+        ylab = "YLABEL")
+```
+
+The second changes the order of the levels for a factor (categorical variable). 
+
+This can make a difference for GLM results as the first level becomes the baseline and all but the first level become additional predictor variables. In general, for GLMs it is good to set the base (reference) level to the one that has the most observations.
+
+```{r}
+levels(data.frame$CATEGORICAL)
+data.frame$CATEGORICAL <- relevel(data.frame$CATEGORICAL, ref = "Level Name")
+levels(data.frame$CATEGORICAL)
+# The levels function will help you see the effect of the change.
+# Replace "data.frame" with the name of your dataframe (2 times).
+# Replace "CATEGORICAL" with the name of a variable that is a factor (categorical variable) (2 times).
+# Replace "Level Name" with the name of the level that should become the first level.
+```
+
+## Read in data
+
+Read in the dataset and create a pass/fail factor variable.
+
+```{r}
+
+Full.DS <- read.csv("student_grades.csv")
+
+# Note the number of rows.
+nrow(Full.DS) # 585 students
+ 
+#Take a quick look at G3.
+table(Full.DS$G3)
+
+# There are clearly some issues here, they can be handled in the data cleaning stage.
+
+# Create a new variable that assigns pass "P" to those with G3 >= 10.
+Full.DS$G3.Pass.Flag <- as.factor(ifelse(Full.DS$G3 >= 10, "P", "F"))
+
+# Remove G1, G2, and absences.
+Full.DS$G1 <- NULL
+Full.DS$G2 <- NULL
+Full.DS$absences <- NULL
+```
+
+## Data exploration and cleaning
+
+To get a sense of the data, here is a summary.
+
+```{r}
+summary(Full.DS)
+str(Full.DS)
+```
+
+This is a good time to decide if records with unusual G3 values should be removed. Otherwise, when plots are made with regard to passing and failing they may reflect records that would be removed later. Didn't get around to this, having only noticed it as I was sending this off.
+
+```{r}
+# Remove records with inapprorpiate G3 values, if any.
+
+
+
+```
+
+It appears there are some outliers. I've used my boxplot function to look at age versus passing. Probably should be done for other numeric variables.
+
+It looks like age does make a diffrence and there are some age outliers.
+
+```{r}
+boxplot(age ~ G3.Pass.Flag,
+        data = Full.DS,
+        xlab = "Pass",
+        ylab = "Age")
+```
+
+For categorical variables (which for this purpose could include those on 1-5 type scales) I found a way to make bar charts (I got this from Chapter 4 of the excellent book by Healy).
+
+```{r}
+library(ggplot2)
+
+ggplot(data=Full.DS, mapping = aes(x=Medu, fill = G3.Pass.Flag)) + geom_bar(position = "fill")
+
+# Medu is odd: Would expect more passing with more mother's education. Not clear what 0 means. Can someone really have no education? No time to check with my bosses here.
+
+table(Full.DS$Medu)
+
+# Few in that category. Maybe eliminate?
+```
+
+
+## Variable exploration
+
+```{r}
+# Remove records with questionable variable values.
+# Consider removing variables that appear to have no predictive power.
+
+
+```
+
+## Calculate correlations for numerical variables
+
+I was able to come up with a way to do this.
+
+```{r}
+
+# Get the numeric variables for use in the correlation matrix.
+
+numeric.vars <-names(Full.DS)[sapply(Full.DS, class) %in% c("integer", "numeric")] # get numeric var names
+num.Full.DS <- Full.DS[, numeric.vars] # get only numeric variables
+
+# Create the correlation matrix.
+
+cor.Full.DS <- data.frame(round(cor(num.Full.DS), 2)) 
+
+cor.Full.DS
+```
+
+## Feature creation
+
+Might be a good idea to decide if new features should be created before models created.
+
+```{r}
+
+
+
+```
+
+## Prepare dataset for modeling 
+
+I need to remember to do this only after all the cleaning and feature creation is done. That ensures the train and test sets both contain the variables that will be used.
+
+Stratified sampling should be used to handle an unbalanced sample; approximately 65% passing and 35% failing.  Want to make sure we dont get more passing or failing individuals in our test or train sets!
+
+Load caret library, set seed, and split into train and test sets. It is supposed to use stratification by default, but I'm going to check on that.
+
+```{r}
+library(caret)
+set.seed(1234)
+partition <- createDataPartition(Full.DS$G3.Pass.Flag, list = FALSE, p = .75)
+Train.DS <- Full.DS[partition, ]
+Test.DS <- Full.DS[-partition, ]
+
+# Pass Rates in train set:
+table(Train.DS$G3.Pass.Flag) / nrow(Train.DS)
+
+# Pass rates in test set:
+table(Test.DS$G3.Pass.Flag) / nrow(Test.DS)
+```
+
+
+## Build models  
+
+### Model 1 - Decision tree
+
+Model to predict pass or fail
+
+The following code runs a decision tree classification model on G3.Pass.Flag, 
+using all variables except for G3.  It uses the full dataset.
+
+The control parameter is used to set the minbucket, cp and maxdepth parameters.
+
+
+```{r}
+library(rpart)
+library(rpart.plot)
+set.seed(123)
+excluded_variables <- c("G3") # List excluded variables.
+
+dt <- rpart(G3.Pass.Flag ~ ., 
+            data = Full.DS[, !(names(Full.DS) %in% excluded_variables)],
+            control = rpart.control(minbucket = 5, cp = .001, maxdepth = 20),
+            parms = list(split = "gini"))
+
+rpart.plot(dt)
+
+# The default is that any group with a predicted probability of pass over 0.5 is assigned pass...it might be good to allow that to be arbitrary.
+# Note that if the model is built on one dataset and then evaluated against another, the predict function needs to have newdata = data.frame added.
+
+cutoff <- 0.5 # set cutoff value
+
+print("All data confusion matrix")
+predicted <- predict(dt, type = "prob")[,1] # This outputs the probabiity of failing
+predicted.final <- as.factor(ifelse(predicted > cutoff, "F", "P"))
+confusionMatrix(predicted.final, factor(Full.DS$G3.Pass.Flag)) 
+```
+
+By looking at the decision tree confusion matrix, it looks very accurate. However, the tree itself looks quite complicated.  Maybe playing around with the control parameters or pruning would work...no time to look into that now, on to random forests...
+
+### Model 2 - Random forest classification
+
+The following code runs a random forest classification model on G3.Pass.Flag, using all variables except G3.  It uses the full dataset.  The code runs through repeated cross validation, and produces the best fit model based on the accuracy metric.
+
+After the model code, there are some diagnostic outputs, such as the variable importance plot and the confusion matrix.
+
+
+```{r}
+
+set.seed(100)
+
+excluded_variables <- c("G3") # List excluded variables.
+
+control <- trainControl(method = "repeatedcv", 
+                        number = 5, 
+                        repeats = 2)
+
+tune_grid <- expand.grid(mtry = c(15:25))
+
+rf <- train(as.factor(G3.Pass.Flag) ~ ., 
+            data = Full.DS[, !(names(Full.DS) %in% excluded_variables)],
+            method = "rf",
+            ntree = 50,
+            importance = TRUE,
+            trControl = control,
+            tuneGrid = tune_grid)
+plot(rf)
+
+plot(varImp(rf), top = 15, main = "Variable Importance of Classification Random Forest")
+
+cutoff <- 0.5 # set cutoff value
+
+print("All data confusion matrix")
+predicted <- predict(rf, type = "prob")[,1] # This outputs the probabiity of failing
+predicted.final <- as.factor(ifelse(predicted > cutoff, "F", "P"))
+confusionMatrix(predicted.final, factor(Full.DS$G3.Pass.Flag)) 
+
+```
+
+### Model 3 - GLM
+
+Because we are modeling a probability (of passing), we need to use the binomial family with a logit link function.  I didn't have time to filter out any insignificant variables, just to run a model on the full dataset using all the variables.
+
+```{r, echo = TRUE}
+GLM <- glm(G3.Pass.Flag ~ . - G3, data = Full.DS, family = binomial(link = "logit"))
+
+summary(GLM)
+
+GLM.pred <- predict(GLM, newdata = Full.DS, type = "response")
+
+cutoff <- 0.5 # set cutoff value
+
+print("All data confusion matrix")
+predicted <- predict(GLM, type = "response") # This outputs the probabiity of passing
+predicted.final <- as.factor(ifelse(predicted > cutoff, "P", "F"))
+confusionMatrix(predicted.final, factor(Full.DS$G3.Pass.Flag)) 
+```
+
+Wow, there is not a lot of statistical significance in this model, but there is pretty good accuracy.  Could it just be luck? 
+

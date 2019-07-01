@@ -1,0 +1,491 @@
+---
+title: "Hospital Readmission template"
+editor_options:
+  chunk_output_type: console
+---
+
+Your assistant has supplied the following three code chunks that may be useful. When employing them, move them to the appropriate location and change inputs as needed.
+
+This chunk performs binarization. Note that it is set to fullRank = FALSE. This creates binarized variables for each factor level. If set to TRUE it will leave one out. Note the new variables are placed in a new dataframe. It can attached to an existing dataframe via old.df <- cbind(old.df, binarized_vars)
+
+```{r}
+.libPaths("C:/Users/sam.castillo/Desktop/PA/library/PAlibrary")
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(tidyr)
+library(broom)
+library(forcats)
+library(caret)
+library(gridExtra)
+library(rpart)
+library(rpart.plot)
+```
+
+
+```{r eval = F, include = F}
+
+library(caret)
+
+factor_names <- c("ER","Age") #insert the column names of the variables to be binarized
+factor_vars <- readmission[,factor_names]
+for (var in factor_names) {
+  factor_vars[, var] <- as.character(factor_vars[, var])
+}
+
+
+binarizer <- caret::dummyVars(paste("~", paste(factor_names, collapse = "+")) , data = factor_vars, fullRank = TRUE)
+binarized_vars <- data.frame(predict(binarizer, newdata = factor_vars))
+head(binarized_vars)
+
+```
+
+This chunk creates training and testing sets.
+
+```{r eval = F,include = F}
+#Create train and test sets
+library(caret)
+set.seed(4321)
+partition <- createDataPartition(readmission[,1], list = FALSE, p = .75) #The partition will stratify using variable 1 from the dataframe
+train <- readmission[partition, ]
+test <- readmission[-partition, ]
+
+print("TRAIN")
+mean(train$Readmission.Status)
+
+print("TEST")
+mean(test$Readmission.Status)
+
+```
+
+The following chunk provides code that can be used to combine factor levels. It also relevels in case the new level has the highest frequency. 
+
+```{r eval = F, include =F}
+#This example combines levels other than White of Race into a new level called NonWhite.
+#Execute the function levels(readmission$Race) to identify the levels. Be sure the variable is a factor variable before doing this. This code assumes the variable has previously been releveled so that "White" is the first level.
+
+readmission2<-readmission #The results are in a new data frame called readmission2. This is done so that the results can be checked without losing the original data frame. When done, consider executing readmission <- readmission2
+
+library(plyr)
+var <- "Race"
+var.levels <- levels(readmission2[,var])
+readmission2[,var] <- mapvalues(readmission2[,var],var.levels,c("White","NonWhite","NonWhite","NonWhite"))
+#Relevel
+table <- as.data.frame(table(readmission2[,var]))
+  max <- which.max(table[,2])
+  level.name <- as.character(table[max,1])
+  readmission2[,var] <- relevel(readmission2[,var], ref = level.name)
+
+table(readmission2[,var])
+```
+
+
+
+
+
+This chunk reads in the data, relevels factors, and prints a summary.
+
+```{r}
+# Loading data
+readmission <- read.csv(file="readmission.csv")
+
+vars <- colnames(readmission)[c(2,3,5,9)] #variables to relevel
+for (i in vars){
+  table <- as.data.frame(table(readmission[,i]))
+  max <- which.max(table[,2])
+  level.name <- as.character(table[max,1])
+  readmission[,i] <- relevel(readmission[,i], ref = level.name)
+}
+summary(readmission) 
+```
+
+
+Task 1: Code is provided to create a histogram for one of the variables.
+
+```{r}
+library(ggplot2)
+readmission %>% ggplot(aes(ER)) + geom_histogram()
+readmission %>% ggplot(aes(LOS)) + geom_histogram()
+
+
+readmission %>% ggplot(aes(Age)) + geom_histogram()
+readmission %>% ggplot(aes(HCC.Riskscore)) + geom_histogram()
+```
+
+```{r}
+readmission <- readmission %>% mutate(LOS_36 = ifelse(LOS == 36, "y", "n"),
+                                      log_LOS = log(LOS),
+                                      log_ER = log(ER + 1),
+                                      log_riskscore = log(HCC.Riskscore)) %>% 
+  select(-LOS, -ER, -HCC.Riskscore)
+```
+
+
+Task 2: Code is provided to create a tabular view of the two variables.
+
+```{r}
+table(readmission$DRG.Class,readmission$DRG.Complication)
+readmission %>% 
+  count(DRG.Class, DRG.Complication) %>% 
+  spread(DRG.Class,n)
+
+readmission <- readmission %>% 
+  filter(!(DRG.Class == "SURG" & DRG.Complication == "MedicalMCC.CC")) %>%  #remove records from error 
+  mutate(DRG = case_when(
+    DRG.Complication == "MedicalMCC.CC" ~ "MedicalMCC",
+    DRG.Complication == "MedicalNoC" ~ "MedicalNoC",
+    DRG.Complication == "SurgMCC.CC" ~ "SurgMCC",
+    DRG.Complication == "SurgNoC" ~ "SurgNoC",
+    DRG.Complication == "Other" ~ "Other",
+    DRG.Class == "SURG" ~ "SURG",
+    DRG.Class == "UNGROUP" ~ "Other",
+    T~"Other"
+  )) %>% 
+  select(-DRG.Class, -DRG.Complication)
+
+readmission %>% count(DRG)
+```
+
+Task 3: Code is provided to perform cluster analysis for from 1 to 12 clusters, construct an elbow plot and create a new variable based on a selected number of clusters. That variable will need to be retained for potentially being added tot he dataframe.
+
+```{r}
+nstart.val <- 30
+cluster_vars <- readmission[c('log_LOS','Age')]
+for(i in 1:ncol(cluster_vars)){
+  cluster_vars[,i] <- scale(cluster_vars[,i])
+}
+km1 <- kmeans(cluster_vars,centers=1,nstart=nstart.val)
+km2 <- kmeans(cluster_vars,centers=2,nstart=nstart.val)
+km3 <- kmeans(cluster_vars,centers=3,nstart=nstart.val)
+km4 <- kmeans(cluster_vars,centers=4,nstart=nstart.val)
+km5 <- kmeans(cluster_vars,centers=5,nstart=nstart.val)
+km6 <- kmeans(cluster_vars,centers=6,nstart=nstart.val)
+km7 <- kmeans(cluster_vars,centers=7,nstart=nstart.val)
+km8 <- kmeans(cluster_vars,centers=8,nstart=nstart.val)
+km9 <- kmeans(cluster_vars,centers=9,nstart=nstart.val)
+km10 <- kmeans(cluster_vars,centers=10,nstart=nstart.val)
+km11 <- kmeans(cluster_vars,centers=11,nstart=nstart.val)
+km12 <- kmeans(cluster_vars,centers=12,nstart=nstart.val)
+
+var.exp <- data.frame(k = c(1:12),
+                      bss_tss = c(km1$betweenss/km1$totss,
+                                  km2$betweenss/km2$totss,
+                                  km3$betweenss/km3$totss,
+                                  km4$betweenss/km4$totss,
+                                  km5$betweenss/km5$totss,
+                                  km6$betweenss/km6$totss,
+                                  km7$betweenss/km7$totss,
+                                  km8$betweenss/km8$totss,
+                                  km9$betweenss/km9$totss,
+                                  km10$betweenss/km10$totss,
+                                  km11$betweenss/km11$totss,
+                                  km12$betweenss/km12$totss))
+
+ggplot(var.exp,aes(x=k,y=bss_tss))+geom_point()
+
+LOS_Age_Clust <- as.factor(km4$cluster) #This creates a new variable based on having 8 clusters.
+cluster_vars$LOS_Age_Clust <- LOS_Age_Clust
+ggplot(data = cluster_vars, aes(x = Age, y = log_LOS, col = LOS_Age_Clust)) + geom_point() + theme(axis.text = element_blank(), legend.title = element_blank()) +ggtitle("Clustering with 4 groups")
+
+readmission <- readmission %>% mutate(los_age_clust = LOS_Age_Clust)
+```
+
+Task 4: The following code may help determine if interactions are present. It is best to treat ER as a factor variable for this purpose.
+
+```{r}
+# #Both variables are factor variables
+# ggplot(readmission,aes(Gender,fill=factor(Readmission.Status))) + geom_bar(position = "fill") +
+#   facet_wrap(~Race,ncol=2,scales="free")+scale_y_continuous()
+# 
+# readmission %>% 
+#   group_by(Race, Gender) %>% 
+#   summarise(pct_readmitted = mean(Readmission.Status)) %>% 
+#   spread(Race, pct_readmitted)
+# 
+# #One factor variable and one continuous numeric variable
+# ggplot(readmission,aes(x=factor(Readmission.Status),y=HCC.Riskscore)) + geom_boxplot() +facet_wrap(~factor(ER))
+# 
+# readmission %>% 
+#   sample_frac(0.5) %>% 
+#   ggplot(aes(exp(log_ER),exp(log_riskscore), fill = as.factor(Readmission.Status))) + 
+#   geom_bar(stat = "identity")
+
+readmission %>% 
+  mutate(ER = log_ER, riskscore = log_riskscore) %>% 
+  group_by(ER, Readmission.Status) %>% 
+  summarise(avg_risk_score = mean(riskscore)) %>% 
+  ggplot(aes(ER, avg_risk_score, color = as.factor(Readmission.Status), shape = as.factor(Readmission.Status),
+             type = as.factor(Readmission.Status))) + 
+  geom_point(size = 2) + 
+  geom_line() + 
+  theme_bw() + 
+  ggtitle("Average Risk Score vs ER") + 
+  xlab("ER Visits") + 
+  ylab("Average Risk Score")
+```
+
+Task 5: The following code runs a GLM using the logit link and all available variables. It assumes that train and test sets have been constructed. Adding an interaction of Gender and Race is included in the code. That is for illustration purposes. The code also produces an ROC curve, a confusion matrix, and calculates AUC.
+
+```{r}
+#Create train and test sets
+library(caret)
+set.seed(4321)
+partition <- createDataPartition(readmission[,1], list = FALSE, p = .75) #The partition will stratify using variable 1 from the dataframe
+train <- readmission[partition, ]
+test <- readmission[-partition, ]
+
+print("TRAIN")
+mean(train$Readmission.Status)
+
+print("TEST")
+mean(test$Readmission.Status)
+```
+
+
+```{r}
+library(pROC)
+model <- glm(Readmission.Status ~ . + Gender*Race, data=train, family = binomial(link="logit"))
+
+summary(model)
+
+preds <- predict(model, newdat=test,type="response")
+
+roc_model <- roc(test$Readmission.Status,preds)
+
+#confusionMatrix(factor(1*(preds>.8)),factor(test$Readmission.Status))
+
+plot(roc_model)
+auc(roc_model)
+```
+
+```{r}
+model <- glm(Readmission.Status ~ . + Gender*Race, data=train, family = binomial(link="probit"))
+
+summary(model)
+
+preds <- predict(model, newdat=test,type="response")
+
+roc_model <- roc(test$Readmission.Status,preds)
+
+#confusionMatrix(factor(1*(preds>.8)),factor(test$Readmission.Status))
+
+plot(roc_model)
+auc(roc_model)
+```
+
+```{r}
+model <- glm(Readmission.Status ~ . + Gender*Race, data=train, family = binomial(link="cauchit"))
+
+summary(model)
+
+preds <- predict(model, newdat=test,type="response")
+
+roc_model <- roc(test$Readmission.Status,preds)
+
+#confusionMatrix(factor(1*(preds>.8)),factor(test$Readmission.Status))
+
+plot(roc_model)
+auc(roc_model)
+```
+
+
+```{r}
+model <- glm(Readmission.Status ~ . + Gender*Race, data=train, family = binomial(link="cloglog"))
+
+summary(model)
+
+preds <- predict(model, newdat=test,type="response")
+
+roc_model <- roc(test$Readmission.Status,preds)
+
+#confusionMatrix(factor(1*(preds>.8)),factor(test$Readmission.Status))
+
+plot(roc_model)
+auc(roc_model)
+```
+
+Task 6: No code is provided.
+
+```{r}
+model <- glm(Readmission.Status ~ LOS_36  + DRG + Gender + Race + log_ER + log_riskscore + log_ER*log_riskscore + los_age_clust, data=train, family = binomial(link="probit"))
+
+summary(model)
+
+preds <- predict(model, newdat=test,type="response")
+
+roc_model <- roc(test$Readmission.Status,preds)
+
+#confusionMatrix(factor(1*(preds>.8)),factor(test$Readmission.Status))
+
+plot(roc_model)
+auc(roc_model)
+```
+
+```{r}
+model <- glm(Readmission.Status ~ LOS_36  + DRG + Gender + Race + log_ER + log_riskscore + log_ER*log_riskscore + log_LOS + Age, data=train, family = binomial(link="probit"))
+
+summary(model)
+
+preds <- predict(model, newdat=test,type="response")
+
+roc_model <- roc(test$Readmission.Status,preds)
+
+#confusionMatrix(factor(1*(preds>.8)),factor(test$Readmission.Status))
+
+plot(roc_model)
+auc(roc_model)
+```
+
+Task 7: No code is provided.
+
+```{r}
+library(caret)
+
+factor_names <- c("DRG","Race") #insert the column names of the variables to be binarized
+factor_vars <- readmission[,factor_names]
+for (var in factor_names) {
+  factor_vars[, var] <- as.character(factor_vars[, var])
+}
+
+
+binarizer <- caret::dummyVars(paste("~", paste(factor_names, collapse = "+")) , data = factor_vars, fullRank = TRUE)
+binarized_vars <- data.frame(predict(binarizer, newdata = factor_vars))
+head(binarized_vars)
+
+readmission_binarized <- readmission %>% 
+  select(-DRG, -Race) %>% 
+  mutate(DRGMedicalNoC = binarized_vars$DRGMedicalNoC,
+         DRGOther = binarized_vars$DRGOther,
+         DRGSurgMCC = binarized_vars$DRGSurgMCC,
+         DRGSurgNoC = binarized_vars$DRGSurgNoC,
+         RaceHispanic = binarized_vars$RaceHispanic,
+         RaceOthers = binarized_vars$RaceWhite)
+
+train_bin <- readmission_binarized[partition,]
+test_bin <- readmission_binarized[-partition,]
+```
+
+
+```{r}
+model <- glm(Readmission.Status ~ ., data=train_bin, family = binomial(link="probit"))
+
+summary(model)
+
+MASS::stepAIC(model)
+
+preds <- predict(model, newdat=test_bin,type="response")
+
+roc_model <- roc(test$Readmission.Status,preds)
+
+#confusionMatrix(factor(1*(preds>.8)),factor(test$Readmission.Status))
+
+plot(roc_model)
+auc(roc_model)
+```
+
+```{r}
+model <- glm(Readmission.Status ~ DRGMedicalNoC + DRGOther + log_LOS + Age + log_riskscore, data=train_bin, family = binomial(link="probit"))
+
+summary(model)
+
+preds <- predict(model, newdat=test_bin,type="response")
+
+roc_model <- roc(test$Readmission.Status,preds)
+
+#confusionMatrix(factor(1*(preds>.8)),factor(test$Readmission.Status))
+
+plot(roc_model)
+auc(roc_model)
+```
+
+
+Task 8: No code is provided.
+
+```{r}
+model <- glm(Readmission.Status ~ DRGMedicalNoC + DRGOther + log_LOS + Age + log_riskscore, data=readmission_binarized, family = binomial(link="probit"))
+
+summary(model)
+```
+
+```{r}
+average_patient <- 
+  readmission_binarized %>% 
+  mutate(los_age_clust = as.numeric(los_age_clust)) %>% 
+  summarise_if(is.numeric, mean)
+
+average_patient
+
+example1 <- tibble(
+  Gender  = "M",
+  Age = 75,
+  LOS_36 = "n",
+  log_LOS = 1.652607,
+  log_ER = 0.3024025,
+  log_riskscore = 0.6000479,
+  los_age_clust = factor(2),
+  DRGMedicalNoC = 0,
+  DRGOther = 0,
+  DRGSurgMCC = 0, 
+  DRGSurgNoC = 0,
+  RaceHispanic = 0,
+  RaceOthers = 1
+)
+example2 <- example1 %>% mutate(log_riskscore = 2)
+example3 <- example1 %>% mutate(log_LOS = 2, Age = 30)
+example4 <- example1 %>% mutate(log_ER = 1.5, log_ER = 3, Age = 30)
+
+preds1 <- predict(model, newdat=example1,type="response")
+preds2 <- predict(model, newdat=example2,type="response")
+preds3 <- predict(model, newdat=example3,type="response")
+preds4 <- predict(model, newdat=example4,type="response")
+
+example1 %>% 
+  rbind(example2) %>% 
+  rbind(example3) %>% 
+  rbind(example4) %>% 
+  mutate(y = c(preds1, preds2, preds3, preds4)) %>% 
+  select(-LOS_36, -los_age_clust, -contains("DRG")) %>% 
+  knitr::kable("pandoc", digits = 3)
+```
+
+
+Task 9: The following code calculates the cost using a cutoff of 0.075. It assumes the final model constructed on the full dataset is called glm_full and the final dataset is readmit.
+
+```{r}
+
+pred_full <- predict(model,type="response")
+cutoff <- .075
+
+pred_readmit <- 1*(pred_full > cutoff)
+no_intervention_cost <- 25*sum(readmission$Readmission.Status == 1)
+full_intervention_cost <- 4*sum(pred_readmit)
+no_intervention_cost
+full_intervention_cost
+```
+
+
+```{r}
+cutoff_values <- c(0.01, 0.075, 0.08, 0.10, 0.20, 0.3, 0.5)
+
+get_modified_cost <- function(input_cutoff){
+  pred_readmit <- 1*(pred_full > input_cutoff)
+  cm <- confusionMatrix(factor(pred_readmit),factor(readmission$Readmission.Status))
+  modified_cost <- cm$table[2,1]*2+cm$table[2,2]*2+cm$table[1,2]*25
+  modified_cost
+}
+get_modified_cost(0.2)
+
+
+tibble(cutoff = cutoff_values,
+       cost = sapply(cutoff_values, get_modified_cost)) %>% 
+  knitr::kable("pandoc", digits = 3)
+  
+```
+
+```{r}
+cutoff <- .08
+pred_readmit <- 1*(pred_full > cutoff)
+cm <- confusionMatrix(factor(pred_readmit),factor(readmission$Readmission.Status))
+cm$table
+```
+

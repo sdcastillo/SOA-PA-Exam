@@ -1,0 +1,393 @@
+---
+title: "PA Sample Project - Student Performance"
+output: html_notebook
+---
+## Useful code chunks
+
+I find these two items useful and I often place them at the beginning of my Rmd file in case they might prove useful. 
+
+The first is helpful when constructing plots of factor/character variables - remember, boxplots can be used to plot a continuous variable and a factor variable at the same time.  
+
+You will need to replace CONTINUOUS.VARIABLE, FACTOR.VARIABLE, DATASET, XLABEL, and YLABEL.
+
+```{r}
+boxplot(CONTINUOUS.VARIABLE ~ FACTOR.VARIABLE,
+        data = DATASET,
+        xlab = "XLABEL",
+        ylab = "YLABEL")
+```
+
+The second changes the order of the levels for a factor (categorical variable). 
+
+This can make a difference for GLM results as the first level becomes the baseline and all but the first level become additional predictor variables. In general, for GLMs it is good to set the base (reference) level to the one that has the most observations.
+
+```{r}
+levels(data.frame$CATEGORICAL)
+data.frame$CATEGORICAL <- relevel(data.frame$CATEGORICAL, ref = "Level Name")
+levels(data.frame$CATEGORICAL)
+# The levels function will help you see the effect of the change.
+# Replace "data.frame" with the name of your dataframe (2 times).
+# Replace "CATEGORICAL" with the name of a variable that is a factor (categorical variable) (2 times).
+# Replace "Level Name" with the name of the level that should become the first level.
+```
+
+## Read in data
+
+Read in the dataset and create a pass/fail factor variable.
+
+```{r}
+
+Full.DS <- read.csv("student_grades.csv")
+
+# Note the number of rows.
+nrow(Full.DS) # 585 students
+ 
+#Take a quick look at G3.
+table(Full.DS$G3)
+
+# There are clearly some issues here, they can be handled in the data cleaning stage.
+
+# Create a new variable that assigns pass "P" to those with G3 >= 10.
+Full.DS$G3.Pass.Flag <- as.factor(ifelse(Full.DS$G3 >= 10, "P", "F"))
+
+# Remove G1, G2, and absences.
+Full.DS$G1 <- NULL
+Full.DS$G2 <- NULL
+Full.DS$absences <- NULL
+```
+
+## Data exploration and cleaning
+
+To get a sense of the data, here is a summary.
+```{r}
+summary(Full.DS)
+str(Full.DS)
+```
+
+Because grades should be between 0 and 20 I removed all records with values outside that range.
+
+```{r}
+# Remove records with inapprorpiate G3 values, if any
+Full.DS <- Full.DS[Full.DS$G3 >= 0,]
+Full.DS <- Full.DS[Full.DS$G3 <= 20,]
+table(Full.DS$G3)
+
+# See number of rows now
+nrow(Full.DS)
+
+```
+
+17 rows removed. To close out the look at G3, here is a bar chart
+
+```{r}
+library(ggplot2)
+ggplot(data=Full.DS, mapping = aes(x=G3)) + geom_bar()
+```
+
+To see the relationship between the one continuous variable (age) and passing I made a boxplot.
+
+```{r}
+boxplot(age ~ G3.Pass.Flag,
+        data = Full.DS,
+        xlab = "Pass",
+        ylab = "Age")
+```
+
+It looks like age makes a difference and there are a few abnormally high ages.
+
+For categorical variables (which for this purpose could include those on 1-5 type scales) I made bar charts. The for loop covers variables 1:2 and 4:29.
+
+```{r}
+library(ggplot2)
+for (i in c(1:2,4:29))
+{
+plot <- ggplot(data=Full.DS, mapping = aes(x=Full.DS[,i], fill = G3.Pass.Flag)) + geom_bar(position = "fill") + labs(x = colnames(Full.DS)[i])
+print(plot)
+}
+
+```
+
+There doesn't seem to be a lot predictive power in most cases. Three look odd. Fedu and Medu show a high pass probability when eduction is 0 and Dalc (weekday alcohol) shows more passing at the highest level (5). Here is quick look at them.
+
+```{r}
+table(Full.DS$Medu)
+table(Full.DS$Fedu)
+table(Full.DS$Dalc)
+```
+
+Remove the zero values for Medu and Fedu. I will retain the 10 cases where Dalc = 5.
+
+## Variable exploration
+```{r}
+# Remove records with questionable variable values.
+
+# Remove the five records with parents education = 0.
+Full.DS <- Full.DS[Full.DS$Medu > 0,]
+Full.DS <- Full.DS[Full.DS$Fedu > 0,]
+
+# Check that records removed did not overlap
+nrow(Full.DS)
+
+```
+
+Another 5 rows removed
+
+## Calculate correlations for numerical variables
+
+I was able to come up with a way to do this.
+
+```{r, echo = TRUE}
+
+# GET NUMERIC VARIABLES FOR CORRELATION MATRIX
+numeric.vars <-names(Full.DS)[sapply(Full.DS, class) %in% c("integer", "numeric")] # get numeric var names
+num.Full.DS <- Full.DS[, numeric.vars] # get only numeric variables
+
+# CREATE CORRELATION MATRIX
+cor.Full.DS <- data.frame(round(cor(num.Full.DS), 2)) 
+
+cor.Full.DS
+```
+
+## Feature creation
+
+Four new features were created that may have predictive power.
+
+```{r}
+Full.DS$combine.alc <- Full.DS$Dalc * Full.DS$Walc
+Full.DS$combine.education <- Full.DS$Medu * Full.DS$Fedu
+Full.DS$both.college <- ifelse(Full.DS$combine.education == 16, 1, 0)
+Full.DS$failures.flag <- ifelse(Full.DS$failures > 0, 1, 0)
+summary(Full.DS)
+```
+
+## Prepare dataset for modeling 
+
+Stratified sampling should be used to handle an unbalanced sample; approximately 65% passing and 35% failing.  Want to make sure we dont get more passing or failing individuals in our test or train sets. 
+
+
+```{r}
+library(caret)
+set.seed(1234)
+partition <- createDataPartition(Full.DS$G3.Pass.Flag, list = FALSE, p = .75)
+Train.DS <- Full.DS[partition, ]
+Test.DS <- Full.DS[-partition, ]
+
+# Pass Rates in train set:
+table(Train.DS$G3.Pass.Flag) / nrow(Train.DS)
+
+# Pass rates in test set:
+table(Test.DS$G3.Pass.Flag) / nrow(Test.DS)
+```
+
+Turns out we did get 65% passing in each set.
+
+## Build models  
+
+### Model 1 - Decesion tree
+Model to predict pass or fail
+
+The first model uses generous defaults, fits to the training set, and calculates confusion matrices with respect to the train and test sets.
+
+```{r}
+library(rpart)
+library(rpart.plot)
+set.seed(123)
+excluded_variables <- c("G3") # List excluded variables
+
+dt <- rpart(G3.Pass.Flag ~ ., 
+            data = Train.DS[, !(names(Full.DS) %in% excluded_variables)],
+            control = rpart.control(minbucket = 5, cp = .001, maxdepth = 20),
+            parms = list(split = "gini"))
+
+rpart.plot(dt)
+
+cutoff <- 0.5 # Set cutoff value
+
+print("Train confusion matrix")
+predicted <- predict(dt, type = "prob")[,1] # This outputs the probability of failing
+predicted.final <- as.factor(ifelse(predicted > cutoff, "F", "P"))
+confusionMatrix(predicted.final, factor(Train.DS$G3.Pass.Flag)) 
+
+print("Test confusion matrix")
+predicted <- predict(dt, newdata = Test.DS, type = "prob")[,1] # This outputs the probability of failing
+predicted.final <- as.factor(ifelse(predicted > cutoff, "F", "P"))
+confusionMatrix(predicted.final, factor(Test.DS$G3.Pass.Flag)) 
+```
+
+Here I change the parameters to get a smaller tree.
+
+```{r}
+library(rpart)
+library(rpart.plot)
+set.seed(123)
+excluded_variables <- c("G3") # List excluded variables
+
+dt <- rpart(G3.Pass.Flag ~ ., 
+            data = Train.DS[, !(names(Full.DS) %in% excluded_variables)],
+            control = rpart.control(minbucket = 10, cp = .02, maxdepth = 10),
+            parms = list(split = "gini"))
+
+rpart.plot(dt)
+
+cutoff <- 0.5 # set cutoff value
+
+print("Train confusion matrix")
+predicted <- predict(dt, type = "prob")[,1] # This outputs the probability of failing
+predicted.final <- as.factor(ifelse(predicted > cutoff, "F", "P"))
+confusionMatrix(predicted.final, factor(Train.DS$G3.Pass.Flag)) 
+
+print("Test confusion matrix")
+predicted <- predict(dt, newdata = Test.DS, type = "prob")[,1] # This outputs the probability of failing
+predicted.final <- as.factor(ifelse(predicted > cutoff, "F", "P"))
+confusionMatrix(predicted.final, factor(Test.DS$G3.Pass.Flag)) 
+
+```
+
+### Model 2 - Random forest classification
+
+A random forest is run on the training set and then applied to the test set.
+
+```{r}
+
+set.seed(100)
+
+excluded_variables <- c("G3") # List excluded variables
+
+control <- trainControl(method = "repeatedcv", 
+                        number = 5, 
+                        repeats = 2)
+
+tune_grid <- expand.grid(mtry = c(15:25))
+
+rf <- train(as.factor(G3.Pass.Flag) ~ ., 
+            data = Train.DS[, !(names(Train.DS) %in% excluded_variables)],
+            method = "rf",
+            ntree = 50,
+            importance = TRUE,
+            trControl = control,
+            tuneGrid = tune_grid)
+plot(rf)
+
+plot(varImp(rf), top = 15, main = "Variable Importance of Classification Random Forest")
+
+cutoff <- 0.5 # set cutoff value
+
+print("Training confusion matrix")
+predicted <- predict(rf, type = "prob")[,1] # This outputs the probabiity of failing
+predicted.final <- as.factor(ifelse(predicted > cutoff, "F", "P"))
+confusionMatrix(predicted.final, factor(Train.DS$G3.Pass.Flag)) 
+
+print("Testing confusion matrix")
+predicted <- predict(rf, newdata = Test.DS, type = "prob")[,1] # This outputs the probabiity of failing
+predicted.final <- as.factor(ifelse(predicted > cutoff, "F", "P"))
+confusionMatrix(predicted.final, factor(Test.DS$G3.Pass.Flag)) 
+
+
+```
+
+### Model 3 - GLM
+
+Because we are modeling a probability (of passing), we need to use the binomial family with a logit link function. I start with the important variables from the random forest model.
+
+```{r, echo = TRUE}
+formula <- as.formula(G3.Pass.Flag ~ goout + combine.education + failures + Medu + failures.flag + 
+                          internet + famsup + Mjob + Fedu + health)
+GLM <- glm(formula, data = Train.DS, family = binomial(link = "logit"))
+
+summary(GLM)
+
+cutoff <- 0.5 # set cutoff value
+
+print("Training confusion matrix")
+predicted <- predict(GLM, type = "response") #This outputs the probabiity of passing
+predicted.final <- as.factor(ifelse(predicted > cutoff, "P", "F"))
+confusionMatrix(predicted.final, factor(Train.DS$G3.Pass.Flag)) 
+
+print("Testing confusion matrix")
+predicted <- predict(GLM, newdata = Test.DS, type = "response") # This outputs the probabiity of passing
+predicted.final <- as.factor(ifelse(predicted > cutoff, "P", "F"))
+confusionMatrix(predicted.final, factor(Test.DS$G3.Pass.Flag)) 
+```
+
+Use stepAIC from the MASS package (drop1 could also be employed) to see which variables could be removed.
+
+```{r}
+library(MASS)
+stepAIC(GLM, direction = "backward")
+```
+
+We need to look at Mjob. First determine which level has the most observations.
+
+```{r}
+summary(Train.DS$Mjob)
+```
+
+Relevel Mjob to make services the base.
+
+```{r}
+levels(Train.DS$Mjob)
+Train.DS$Mjob <- relevel(Train.DS$Mjob, ref = "services")
+levels(Train.DS$Mjob)
+Test.DS$Mjob <- relevel(Test.DS$Mjob, ref = "services")
+```
+
+Rerun the GLM with the smaller set of variables.
+
+```{r}
+formula <- as.formula(G3.Pass.Flag~goout + failures + Medu +  
+                          internet + famsup + Mjob + health)
+GLM <- glm(formula, data = Train.DS, family = binomial(link = "logit"))
+
+summary(GLM)
+
+cutoff <- 0.5 # set cutoff value
+
+print("Training confusion matrix")
+predicted <- predict(GLM, type = "response") # This outputs the probabiity of passing
+predicted.final <- as.factor(ifelse(predicted > cutoff, "P", "F"))
+confusionMatrix(predicted.final, factor(Train.DS$G3.Pass.Flag)) 
+
+print("Testing Confusion Matrix")
+predicted <- predict(GLM, newdata = Test.DS, type = "response") # This outputs the probabiity of passing
+predicted.final <- as.factor(ifelse(predicted > cutoff, "P", "F"))
+confusionMatrix(predicted.final, factor(Test.DS$G3.Pass.Flag)) 
+```
+
+I next perform regularized regression using the binomial distribution. All variables are used.
+
+```{r}
+library(glmnet)
+set.seed(4321)
+f <- as.formula(paste("G3.Pass.Flag~", 
+                      paste(colnames(Full.DS)[!(colnames(Full.DS) %in% c(excluded_variables, "G3.Pass.Flag"))], 
+                            collapse = "+")))
+X.train <- model.matrix(f,Train.DS)
+
+alpha.guess = 1
+m <- cv.glmnet(x = X.train, 
+               y = Train.DS$G3.Pass.Flag,
+               family = "binomial",
+               alpha = alpha.guess)
+
+m.best <- glmnet(x = X.train, 
+                 y = Train.DS$G3.Pass.Flag,
+                 family = "binomial", lambda = m$lambda.min,
+                 alpha = alpha.guess)
+m.best$beta
+
+X.test <- model.matrix(f, Test.DS)
+train.predict <- predict(m.best, newx = X.train, type = 'response')
+test.predict <- predict(m.best, newx = X.test, type = 'response')
+
+cutoff <- 0.5 #set cutoff value
+
+print("Training confusion matrix")
+predicted.final <- as.factor(ifelse(train.predict > cutoff, "P", "F"))
+confusionMatrix(predicted.final, factor(Train.DS$G3.Pass.Flag)) 
+
+print("Testing confusion matrix")
+predicted.final <- as.factor(ifelse(test.predict > cutoff, "P", "F"))
+confusionMatrix(predicted.final, factor(Test.DS$G3.Pass.Flag)) 
+```
+
+
