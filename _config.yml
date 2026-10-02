@@ -1,0 +1,13 @@
+title: SOA Exam PA Notes
+description: Open-source R notes for the Society of Actuaries Predictive Analytics exam.
+remote_theme: pages-themes/cayman@v0.2.0
+show_downloads: false
+markdown: kramdown
+plugins:
+  - jekyll-remote-theme
+# Notebooks carry their own YAML front matter. Keep them in the repo and off
+# the Pages build so Jekyll does not publish them as extra pages.
+exclude:
+  - Hospital Readmissions
+  - Miners Union
+  - Student Academic Success
