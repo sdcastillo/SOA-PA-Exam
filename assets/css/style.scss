@@ -7,7 +7,7 @@
 //   _config.yml                 theme: jekyll-theme-cayman
 //   _layouts/default.html       adds class="samwiki" when page.samwiki is true
 //   _includes/head-custom.html  Outfit + Source Sans 3
-//   _includes/samwiki-nav.html  Home (SamWiki), Running, About, Code, GitHub
+//   _includes/samwiki-nav.html  Home, Running, About, Code, Hire, GitHub, Linktree
 //
 // Setup follows GitHub's guide:
 // https://docs.github.com/en/pages/setting-up-a-github-pages-site-with-jekyll/adding-a-theme-to-your-github-pages-site-using-jekyll
@@ -124,6 +124,18 @@ body.samwiki .page-header .sw-nav a[aria-current="page"] {
   border-color: var(--sw-neon);
   color: #06241c;
   text-decoration: none;
+}
+
+body.samwiki .page-header .sw-nav a.sw-nav-hire {
+  background: var(--sw-neon);
+  border-color: var(--sw-neon);
+  color: #06241c;
+}
+
+body.samwiki .page-header .sw-nav a.sw-nav-hire:hover {
+  background: #f3fffb;
+  border-color: #f3fffb;
+  color: #06241c;
 }
 
 @media screen and (min-width: 64em) {
@@ -543,6 +555,18 @@ body.samwiki .site-footer .sw-nav a[aria-current="page"] {
   border-color: var(--sw-navy);
   color: #f3fffb;
   text-decoration: none;
+}
+
+body.samwiki .site-footer .sw-nav a.sw-nav-hire,
+body.samwiki .site-footer .sw-nav a.sw-nav-hire:hover {
+  background: var(--sw-navy);
+  border-color: var(--sw-navy);
+  color: #f3fffb;
+}
+
+body.samwiki .site-footer .sw-nav a.sw-nav-hire:hover {
+  background: var(--sw-teal);
+  border-color: var(--sw-teal);
 }
 
 body.samwiki :focus-visible {
