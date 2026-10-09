@@ -26,3 +26,20 @@ samwiki: true
     </ul>
   </aside>
 </section>
+
+<section class="sw-videos" aria-labelledby="sw-videos-title">
+  <h2 id="sw-videos-title">Videos</h2>
+  <p>Sam Castillo's Exam PA videos: study tips, a live webinar, and worked practice-exam solutions, including the hospital readmissions project in this repository.</p>
+  <div style="position:relative;padding-top:56.25%;margin:1rem 0;">
+    <iframe src="https://rumble.com/embed/v7dies4/" title="Practice Exam - Hospital Readmissions - Solution" style="position:absolute;inset:0;width:100%;height:100%;border:0;" allowfullscreen loading="lazy"></iframe>
+  </div>
+  <ul>
+    <li><a href="https://rumble.com/v7forpm-practice-exam-hospital-readmissions-solution.html">Practice Exam - Hospital Readmissions - Solution</a> (Rumble)</li>
+    <li><a href="https://rumble.com/v7forfo-predictive-analytics-exampa-practice-exam-2-video-solution-reupload.html">Predictive Analytics (ExamPA) Practice Exam 2 Video Solution (Reupload)</a> (Rumble)</li>
+    <li><a href="https://rumble.com/v7foqki-bicycle-sharing-demand-prediction-tutorial-exam-solution-walkthrough.html">Bicycle Sharing Demand Prediction Tutorial - Exam Solution Walkthrough</a> (Rumble)</li>
+    <li><a href="https://rumble.com/v7fosfw-live-webinar-exam-pa-machine-learning-secrets-you-cant-miss.html">Live Webinar: Exam PA Machine Learning Secrets You Can't Miss!</a> (Rumble)</li>
+    <li><a href="https://www.youtube.com/watch?v=F2okL4a2YcM">Unleash Your Potential: Step-by-Step Study Tips for Exam PA (2021 Update)!</a> (YouTube)</li>
+    <li><a href="https://www.youtube.com/watch?v=FE5-pKaBHrg">Unlock the Power of Cost Complexity Pruning with Ease!</a> (YouTube)</li>
+    <li><a href="https://www.youtube.com/watch?v=xDJXuoM6ZCI">Mastering GLM Link Functions: A Comprehensive Guide</a> (YouTube)</li>
+  </ul>
+</section>
