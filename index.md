@@ -1,7 +1,8 @@
 ---
 layout: default
 title: SOA Exam PA Notes
-description: Open-source R notes for the Society of Actuaries Predictive Analytics exam.
+tagline: Open-source R notes for the Society of Actuaries Predictive Analytics exam.
+description: "Sam Castillo's open-source notes for SOA Exam PA: GLMs, trees, and random forests on hospital readmissions, mining injuries, and student performance."
 samwiki: true
 ---
 

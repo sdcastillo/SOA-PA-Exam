@@ -569,6 +569,14 @@ body.samwiki .site-footer .sw-nav a.sw-nav-hire:hover {
   border-color: var(--sw-teal);
 }
 
+body.samwiki .ai-tags {
+  max-width: 42rem;
+  margin: 0.85rem auto 0;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: var(--sw-muted);
+}
+
 body.samwiki :focus-visible {
   outline: 3px solid var(--sw-violet);
   outline-offset: 2px;
