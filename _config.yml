@@ -1,10 +1,25 @@
 title: SOA Exam PA Notes
-description: Open-source R notes for the Society of Actuaries Predictive Analytics exam.
+tagline: Open-source R notes for the Society of Actuaries Predictive Analytics exam.
+description: "Sam Castillo's open-source notes for SOA Exam PA: GLMs, trees, and random forests on hospital readmissions, mining injuries, and student performance."
+lang: en-US
+author:
+  name: Sam Castillo
+  url: https://sdcastillo.github.io/
+social:
+  name: Sam Castillo
+  links:
+    - https://sdcastillo.github.io/
+    - https://github.com/sdcastillo
+    - https://linktr.ee/samuel.castillo
+    - https://www.predictiveinsightsai.com/
+keywords: SOA Exam PA, Predictive Analytics, Sam Castillo, generalized linear models, GLM, decision trees, random forests, hospital readmissions, actuarial exam, R, caret, artificial intelligence
+hashtags: "#ExamPA #PredictiveAnalytics #ActuarialScience #GLM #MachineLearning #RStats #SamCastillo #DataScience"
 remote_theme: pages-themes/cayman@v0.2.0
 show_downloads: false
 markdown: kramdown
 plugins:
   - jekyll-remote-theme
+  - jekyll-seo-tag
 # Notebooks carry their own YAML front matter. Keep them in the repo and off
 # the Pages build so Jekyll does not publish them as extra pages.
 exclude:
